@@ -5,6 +5,9 @@ import (
 	"sync"
 )
 
+const ROWSIZE = 729
+const CLMSIZE = 324
+
 func clmNumbers(clm int, matrix [9][9]int) []int {
 	res := []int{}
 	for idx := range matrix {
@@ -62,7 +65,7 @@ creating a go routine for each constraint means that it has to put 729 cell to t
 can be split further to 9 go routines per constraints that set 81 cell to true
 */
 
-func rowClmConstraint(matrix [][]bool, wg *sync.WaitGroup) {
+func rowClmConstraint(matrix [ROWSIZE][CLMSIZE]bool, wg *sync.WaitGroup) {
 	// R1C1 = { R1C1#1, R1C1#2, R1C1#3, R1C1#4, R1C1#5, R1C1#6, R1C1#7, R1C1#8, R1C1#9 }
 	defer wg.Done()
 	for i := 0; i < 9; i++ {
@@ -76,7 +79,7 @@ func rowClmConstraint(matrix [][]bool, wg *sync.WaitGroup) {
 	}
 }
 
-func rowNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
+func rowNumConstraint(matrix [ROWSIZE][CLMSIZE]bool, wg *sync.WaitGroup) {
 	//R1#1 = { R1C1#1, R1C2#1, R1C3#1, R1C4#1, R1C5#1, R1C6#1, R1C7#1, R1C8#1, R1C9#1 }
 	defer wg.Done()
 	for i := 0; i < 9; i++ {
@@ -90,7 +93,7 @@ func rowNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
 	}
 }
 
-func clmNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
+func clmNumConstraint(matrix [ROWSIZE][CLMSIZE]bool, wg *sync.WaitGroup) {
 	//C1#1 = { R1C1#1, R2C1#1, R3C1#1, R4C1#1, R5C1#1, R6C1#1, R7C1#1, R8C1#1, R9C1#1 }
 	defer wg.Done()
 	for i := 0; i < 9; i++ {
@@ -105,7 +108,7 @@ func clmNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
 	}
 }
 
-func boxNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
+func boxNumConstraint(matrix [ROWSIZE][CLMSIZE]bool, wg *sync.WaitGroup) {
 	//B1#1 = { R1C1#1, R1C2#1, R1C3#1, R2C1#1, R2C2#1, R2C3#1, R3C1#1, R3C2#1, R3C3#1 }
 	defer wg.Done()
 	for i := 0; i < 9; i++ {
@@ -125,20 +128,10 @@ func boxNumConstraint(matrix [][]bool, wg *sync.WaitGroup) {
 
 func main() {
 	//matrix := [9][9]int{}
-	constraintMatrix := make([][]bool, 729)
-	for i := range constraintMatrix {
-		constraintMatrix[i] = make([]bool, 324)
-	}
-
-	// Initialize the slice with default values (false)
-	for i := 0; i < 729; i++ {
-		for j := 0; j < 324; j++ {
-			constraintMatrix[i][j] = false
-		}
-	}
+	constraintMatrix := [ROWSIZE][CLMSIZE]bool{}
 	wg := sync.WaitGroup{}
 
-	constraints := []func([][]bool, *sync.WaitGroup){rowClmConstraint, rowNumConstraint, clmNumConstraint, boxNumConstraint}
+	constraints := []func([ROWSIZE][CLMSIZE]bool, *sync.WaitGroup){rowClmConstraint, rowNumConstraint, clmNumConstraint, boxNumConstraint}
 
 	for _, constraint := range constraints {
 		wg.Add(1)

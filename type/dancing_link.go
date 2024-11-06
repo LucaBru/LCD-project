@@ -4,6 +4,9 @@ import (
 	"sync"
 )
 
+const CLMSIZE int = 324
+const ROWSIZE int = 729
+
 type Node struct {
 	Left   *Node
 	Right  *Node
@@ -13,158 +16,164 @@ type Node struct {
 }
 
 type ClmHeader struct {
-	id    int
-	size  int
-	left  *ClmHeader
-	right *ClmHeader
-	clm   *Node
+	id   int
+	size int
+	node Node
 }
 
 type DancingLink struct {
 	root *ClmHeader
 }
 
-func NewDancingLink(matrix [][]bool) *DancingLink {
-	clms := len(matrix[0])
-	var previous *ClmHeader
-	for idx := range clms {
-		clmHeader := &ClmHeader{
-			id:    clms - idx - 1,
-			size:  0,
-			clm:   nil,
-			left:  nil,
-			right: previous,
-		}
+/*
+given the boolean matrix
+	=> create the node matrix, which creates the headers too
+	=> binds the rows
+	=> binds the columns
+*/
 
-		if previous != nil {
-			previous.left = clmHeader
-		}
-
-		previous = clmHeader
-	}
-	root := previous
-
-	size := 0
-	iter := root
-	for iter != nil {
-		size++
-		iter = iter.right
-	}
-
-	//create the node matrix
-	nodeMatrix := [][]*Node{}
-	wg := sync.WaitGroup{}
-	clmHeaderIterator := root
-	for _, row := range matrix {
-		nodeRow := make([]*Node, len(row))
-		nodeMatrix = append(nodeMatrix, nodeRow)
-		wg.Add(1)
-		go createNodesRow(row, nodeRow, clmHeaderIterator, &wg)
-		//clmHeaderIterator = clmHeaderIterator.right
-	}
-	wg.Wait()
-
-	//binds columns nodes
-	for i := 0; i < len(matrix[0]); i++ {
-		wg.Add(1)
-		go bindClmNodes(i, nodeMatrix, &wg)
-	}
-	wg.Wait()
-
-	//binds rows nodes
-	wg.Add(len(nodeMatrix))
-	for _, row := range nodeMatrix {
-		go bindRowNodes(row, &wg)
-	}
-	wg.Wait()
-
-	//binds header to its column list
-	iterator := root
-	iteratorIdx := 0
-	for iterator != nil {
-		if iterator.size > 0 {
-			i := 0
-			for ; nodeMatrix[i][iteratorIdx] == nil; i++ {
-			}
-			nodeMatrix[i][iteratorIdx].header.clm = nodeMatrix[i][iteratorIdx]
-		}
-		iteratorIdx++
-		iterator = iterator.right
-	}
+func NewDancingLink(matrix [ROWSIZE][CLMSIZE]bool) *DancingLink {
+	nodeMatrix := getNodeMatrix(&matrix)
+	root := bindColumns(nodeMatrix)
 
 	return &DancingLink{
 		root,
 	}
 }
 
-func createNodesRow(row []bool, nodesRow []*Node, clmHeader *ClmHeader, wg *sync.WaitGroup) {
-	defer wg.Done()
+func getHeaders() *ClmHeader {
+	clms := CLMSIZE
 
-	if len(row) != len(nodesRow) {
-		return
+	root := &ClmHeader{id: 0, size: 0, node: Node{}}
+	root.node.header = root
+	clms--
+	iter := root
+
+	for i := 0; i < clms; i++ {
+		header := &ClmHeader{id: i, size: 0, node: Node{Left: &iter.node}}
+		header.node.header = header
+		iter.node.Right = &header.node
+		iter = iter.node.header
 	}
 
-	for idx, cell := range row {
-		if cell {
-			nodesRow[idx] = &Node{Left: nil, Right: nil, Below: nil, Above: nil, header: clmHeader}
-			clmHeader.size++
-		} else {
-			nodesRow[idx] = nil
-		}
-	}
+	iter.node.Right = &root.node
+	root.node.Left = &iter.node
+
+	return root
 }
 
-func bindClmNodes(clmIdx int, matrix [][]*Node, wg *sync.WaitGroup) {
-	defer wg.Done()
+func bindColumns(matrix *[ROWSIZE][CLMSIZE]*Node) *ClmHeader {
+	header := getHeaders()
+	headerIter := header
+	wg := sync.WaitGroup{}
+	wg.Add(CLMSIZE)
 
-	if len(matrix) > 0 && len(matrix[0]) < clmIdx {
+	for i := 0; i < CLMSIZE; i++ {
+		go bindsSingleColumn(matrix, i, headerIter, &wg)
+		headerIter = headerIter.node.Right.header
+	}
+	wg.Add(CLMSIZE)
+
+	return header
+}
+
+func bindsSingleColumn(matrix *[ROWSIZE][CLMSIZE]*Node, clmIdx int, header *ClmHeader, wg *sync.WaitGroup) {
+	if clmIdx < 0 || clmIdx >= CLMSIZE {
 		return
 	}
 
-	firstNodeIdx := 0
-	for firstNodeIdx < len(matrix) && matrix[firstNodeIdx][clmIdx] == nil {
-		firstNodeIdx++
+	idx := 0
+	for ; idx < ROWSIZE && matrix[idx][clmIdx] == nil; idx++ {
 	}
 
-	if firstNodeIdx == len(matrix) {
+	if idx == ROWSIZE {
 		return
+
 	}
 
-	above := matrix[firstNodeIdx][clmIdx]
+	previous := matrix[idx][clmIdx]
+	header.size++
+	header.node.Below = previous
+	previous.Above = &header.node
+	previous.header = header
 
-	for i := firstNodeIdx + 1; i < len(matrix); i++ {
+	for i := idx; i < ROWSIZE; i++ {
 		if matrix[i][clmIdx] != nil {
 			node := matrix[i][clmIdx]
-			node.Above = above
-			above.Below = node
-			above = node
+			previous.Below = node
+			node.Above = previous
+			node.header = header
+			header.size++
+			previous = node
 		}
 	}
+
+	previous.Below = &header.node
+	header.node.Above = previous
 }
 
-func bindRowNodes(row []*Node, wg *sync.WaitGroup) {
+func getNodeMatrix(matrix *[ROWSIZE][CLMSIZE]bool) *[ROWSIZE][CLMSIZE]*Node {
+	nodeMatrix := [ROWSIZE][CLMSIZE]*Node{}
+	wg := sync.WaitGroup{}
+	wg.Add(ROWSIZE)
+	for idx, row := range matrix {
+		nodeRow := [CLMSIZE]*Node{}
+		go createNodesRow(&row, &nodeRow, &wg)
+		nodeMatrix[idx] = nodeRow
+	}
+	wg.Wait()
+	return &nodeMatrix
+}
+
+func createNodesRow(row *[CLMSIZE]bool, nodesRow *[CLMSIZE]*Node, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	if len(row) == 0 {
+	i := 0
+	for ; i < CLMSIZE && !row[i]; i++ {
+	}
+
+	previous := &Node{}
+
+	if i == CLMSIZE {
 		return
+
 	}
 
-	firstNodeIdx := 0
-	for firstNodeIdx < len(row) && row[firstNodeIdx] == nil {
-		firstNodeIdx++
-	}
-
-	if firstNodeIdx == len(row) {
-		return
-	}
-
-	left := row[firstNodeIdx]
-	for i := firstNodeIdx + 1; i < len(row); i++ {
-		if row[i] != nil {
-			node := row[i]
-			node.Left = left
-			left.Right = node
-			left = node
+	for idx, cell := range row[i+1:] {
+		if cell {
+			node := &Node{}
+			node.Left = previous
+			previous.Right = node
+			nodesRow[idx] = node
+			previous = node
 		}
 	}
 }
+
+/* func algorithmX(root *ClmHeader, partialSol []*Node) []*Node {
+	if root == nil {
+		return partialSol
+	}
+
+	clm := root
+	for iter := root.right; iter != nil; iter = iter.right {
+		if iter.size > clm.size {
+			clm = iter
+		}
+	}
+
+	//getting the matrix & the clm updates the matrix
+	//to create a new column view => easy
+
+	//include r in the partial solution,
+	//take a modified view of the matrix
+	//proceed recursively
+
+}
+
+func cover(node *Node, dancingLink *DancingLink) *DancingLink {
+	for rowIter := node.Right; rowIter != node; rowIter = rowIter.Right {
+		//row iter point to all ones in the same row
+		for clm
+	}
+} */
